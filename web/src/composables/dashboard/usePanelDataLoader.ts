@@ -43,9 +43,9 @@ export const usePanelDataLoader = (
   searchType: any,
 ) => {
   const log = (...args: any[]) => {
-    // if (true) {
-    //   console.log(panelSchema?.value?.title + ": ", ...args);
-    // }
+    if (true) {
+      console.log(panelSchema?.value?.title + ": ", ...args);
+    }
   };
 
   const state = reactive({
@@ -154,6 +154,8 @@ export const usePanelDataLoader = (
         () => variablesData.value?.values,
         () => {
           if (ifPanelVariablesCompletedLoading()) {
+            console.log("---------------------");
+
             resolve();
             stopWatching(); // Stop watching once isVisible is true
           }
@@ -172,6 +174,7 @@ export const usePanelDataLoader = (
     try {
       log("loadData: entering...");
 
+      // Check and abort the previous call if necessary
       if (abortController) {
         log("logData: aborting previous function call (if any)");
         abortController.abort();
@@ -245,7 +248,8 @@ export const usePanelDataLoader = (
               queryType: panelSchema.value.queryType,
               variables: [...(metadata1 || []), ...(metadata2 || [])],
             };
-            // console.log("Calling metrics_query_range API");
+            const signal = abortController.signal;
+
             return queryService
               .metrics_query_range({
                 org_identifier: store.state.selectedOrganization.identifier,
@@ -255,12 +259,16 @@ export const usePanelDataLoader = (
               })
               .then((res) => {
                 state.errorDetail = "";
-                // console.log("API response received");
                 return { result: res.data.data, metadata: metadata };
               })
               .catch((error) => {
-                // Process API error for "promql"
                 processApiError(error, "promql");
+                return { result: null, metadata: metadata };
+              })
+              .finally(() => {
+                if (signal.aborted) {
+                  return { result: null, metadata: metadata };
+                }
                 return { result: null, metadata: metadata };
               });
           },
@@ -301,6 +309,7 @@ export const usePanelDataLoader = (
               queryType: panelSchema.value.queryType,
               variables: [...(metadata1 || []), ...(metadata2 || [])],
             };
+            const signal = abortController.signal;
 
             // console.log("Calling search API", query, metadata);
             return await queryService
@@ -346,9 +355,18 @@ export const usePanelDataLoader = (
                 // Process API error for "sql"
                 processApiError(error, "sql");
                 return { result: null, metadata: metadata };
+              })
+              .finally(() => {
+                if (signal.aborted) {
+                  console.log("finally aborted----------", signal.aborted);
+                  abortController.abort();
+                }
+                console.log("finally----------", signal.aborted);
+                abortController.abort();
               });
           },
         );
+
         // Wait for all query promises to resolve
         const sqlqueryResults = await Promise.all(sqlqueryPromise);
         state.loading = false;
