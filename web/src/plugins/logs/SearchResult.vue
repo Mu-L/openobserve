@@ -24,13 +24,16 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
       style="width: 100%"
     >
       <div class="row">
-        <div class="col-6 text-left q-pl-lg q-mt-xs bg-warning text-white rounded-borders	" v-if="searchObj.data.countErrorMsg != ''">
+        <div
+          class="col-6 text-left q-pl-lg q-mt-xs bg-warning text-white rounded-borders"
+          v-if="searchObj.data.countErrorMsg != ''"
+        >
           <SanitizedHtmlRenderer
             data-test="logs-search-total-count-error-message"
             :htmlContent="searchObj.data.countErrorMsg"
           />
         </div>
-        <div v-else  class="col-6 text-left q-pl-lg q-mt-xs warning">
+        <div v-else class="col-6 text-left q-pl-lg q-mt-xs warning">
           {{ noOfRecordsTitle }}
         </div>
         <div class="col-6 text-right q-pr-md q-gutter-xs pagination-block">
@@ -81,13 +84,13 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
         </div>
       </div>
       <div v-if="searchObj.data.histogram.errorMsg == ''">
-        <ChartRenderer
+        <!-- <ChartRenderer
           v-if="searchObj.meta.showHistogram"
           data-test="logs-search-result-bar-chart"
           :data="plotChart"
           style="max-height: 100px"
           @updated:dataZoom="onChartUpdate"
-        />
+        /> -->
         <div
           class="q-pb-lg"
           style="top: 50px; position: absolute; left: 45%"
@@ -123,7 +126,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           {{ searchObj.data.histogram.errorMsg }}
         </h6>
       </div>
-      <q-virtual-scroll
+      <!-- <q-virtual-scroll
         data-test="logs-search-result-logs-table"
         id="searchGridComponent"
         type="table"
@@ -232,7 +235,8 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             </tr>
             <tr
               v-if="
-                searchObj.loading == false && searchObj.data.missingStreamMessage != ''
+                searchObj.loading == false &&
+                searchObj.data.missingStreamMessage != ''
               "
             >
               <td
@@ -322,30 +326,6 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
                   data-test="table-row-expand-menu"
                   @click.stop="expandLog(row, index)"
                 ></q-btn>
-                <!-- <high-light
-                  :content="
-                    column.name == 'source'
-                      ? column.prop(row)
-                      : searchObj.data.resultGrid.columns.length > 2 &&
-                        (column.prop(row, column.name)?.length || 0) > 100
-                      ? (column.prop(row, column.name)?.substr(0, 100) || '') +
-                        '...'
-                      : column.name != '@timestamp'
-                      ? row[column.name]
-                      : column.prop(row, column.name)
-                  "
-                  :query-string="
-                    searchObj.meta.sqlMode
-                      ? searchObj.data.query.split('where')[1]
-                      : searchObj.data.query
-                  "
-                  :title="
-                    (column.prop(row, column.name)?.length || 0) > 100 &&
-                    column.name != 'source'
-                      ? column.prop(row, column.name)
-                      : ''
-                  "
-                ></high-light> -->
                 <span class="ellipsis" :title="column.prop(row, column.name)">{{
                   column.prop(row, column.name)
                 }}</span>
@@ -414,7 +394,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             </td>
           </q-tr>
         </template>
-      </q-virtual-scroll>
+      </q-virtual-scroll> -->
       <q-dialog
         data-test="logs-search-result-detail-dialog"
         v-model="searchObj.meta.showDetailTab"
