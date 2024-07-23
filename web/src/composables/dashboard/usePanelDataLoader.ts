@@ -348,9 +348,7 @@ export const usePanelDataLoader = (
           queries: sqlqueryResults.map((it) => it?.metadata),
         };
 
-        state.resultMetaData = sqlqueryResults.map(
-          (it) => it?.resultMetaData
-        );
+        state.resultMetaData = sqlqueryResults.map((it) => it?.resultMetaData);
 
         log("logaData: state.data", state.data);
         log("logaData: state.metadata", state.metadata);
