@@ -22,6 +22,8 @@ use datafusion::{
 use datafusion_expr::{and, col, lit, Expr, Filter, LogicalPlan};
 
 /// Optimization rule that add _timestamp constraint to table scan
+///
+/// Note: should apply before push down filter rule
 #[derive(Default)]
 pub struct AddTimestampRule {
     filter: Expr,
@@ -57,8 +59,6 @@ impl OptimizerRule for AddTimestampRule {
         plan: LogicalPlan,
         _config: &dyn OptimizerConfig,
     ) -> Result<Transformed<LogicalPlan>> {
-        // TODO: current this optimizer only can run once for each plan
-        // TODO: we can modify this rule or add another optimizer to union filter
         match plan {
             LogicalPlan::TableScan(_) => {
                 let filter_plan =
@@ -122,8 +122,6 @@ mod tests {
         let opt_context = OptimizerContext::new().with_max_passes(1);
 
         let optimizer = Optimizer::with_rules(vec![Arc::clone(&rule)]);
-        // let optimizer = Optimizer::with_rules(vec![Arc::new(DecorrelatePredicateSubquery::new())
-        // ,Arc::clone(&rule)]);
         let optimized_plan = optimizer.optimize(plan, &opt_context, observe)?;
         let formatted_plan = format!("{optimized_plan:?}");
         assert_eq!(formatted_plan, expected);
