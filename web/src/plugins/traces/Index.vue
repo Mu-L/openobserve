@@ -965,7 +965,7 @@ export default defineComponent({
 
         searchObj.data.resultGrid.columns.push({
           name: "@timestamp",
-          field: (row: any) =>
+          accessorfn: (row: any) =>
             timestampToTimezoneDate(
               row["trace_start_time"],
               store.state.timezone,
