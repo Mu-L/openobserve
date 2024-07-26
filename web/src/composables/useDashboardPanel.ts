@@ -859,7 +859,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
         ].fields.breakdown = [];
         dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter = [];
+        ].fields.filter.conditions = [];
         dashboardPanelData.data.htmlContent = "";
         dashboardPanelData.data.markdownContent = "";
         dashboardPanelData.data.queries?.forEach((query: any) => {
@@ -972,11 +972,11 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
   const removeFilterItem = (name: string) => {
     const index = dashboardPanelData.data.queries[
       dashboardPanelData.layout.currentQueryIndex
-    ].fields.filter.findIndex((it: any) => it.column == name);
+    ].fields.filter.conditions.findIndex((it: any) => it.column == name);
     if (index >= 0) {
       dashboardPanelData.data.queries[
         dashboardPanelData.layout.currentQueryIndex
-      ].fields.filter.splice(index, 1);
+      ].fields.filter.conditions.splice(index, 1);
     }
   };
 
@@ -1175,11 +1175,11 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       );
       dashboardPanelData.data.queries[
         dashboardPanelData.layout.currentQueryIndex
-      ].fields.filter.splice(
+      ].fields.filter.conditions.splice(
         0,
         dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.length,
+        ].fields.filter.conditions.length,
       );
       dashboardPanelData.data.queries[
         dashboardPanelData.layout.currentQueryIndex
@@ -2328,7 +2328,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       if (
         dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.length > 0
+        ].fields.filter.conditions.length > 0
       ) {
         errors.push(
           "Filters are not supported for PromQL. Remove anything added to the Filters.",
@@ -2600,12 +2600,12 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       if (
         dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.length
+        ].fields.filter.conditions.length
       ) {
         // check if at least 1 item from the list is selected
         const listFilterError = dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.filter(
+        ].fields.filter.conditions.filter(
           (it: any) => it.type == "list" && !it.values?.length,
         );
         if (listFilterError.length) {
@@ -2620,7 +2620,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
         // check if condition operator is selected
         const conditionFilterError = dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.filter(
+        ].fields.filter.conditions.filter(
           (it: any) => it.type == "condition" && it.operator == null,
         );
         if (conditionFilterError.length) {
@@ -2634,7 +2634,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
         // check if condition value is selected
         const conditionValueFilterError = dashboardPanelData.data.queries[
           dashboardPanelData.layout.currentQueryIndex
-        ].fields.filter.filter(
+        ].fields.filter.conditions.filter(
           (it: any) =>
             it.type == "condition" &&
             !["Is Null", "Is Not Null"].includes(it.operator) &&
