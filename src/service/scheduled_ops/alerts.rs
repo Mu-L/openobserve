@@ -66,7 +66,7 @@ pub async fn save(
     alert.stream_name = stream_name.to_string();
     alert.row_template = alert.row_template.trim().to_string();
 
-    match db::alerts::get(org_id, stream_type, stream_name, &alert.name).await {
+    match db::scheduled_ops::alerts::get(org_id, stream_type, stream_name, &alert.name).await {
         Ok(Some(_)) => {
             if create {
                 return Err(anyhow::anyhow!("Alert already exists"));
@@ -103,7 +103,10 @@ pub async fn save(
         return Err(anyhow::anyhow!("Alert destinations is required"));
     }
     for dest in alert.destinations.iter() {
-        if db::alerts::destinations::get(org_id, dest).await.is_err() {
+        if db::scheduled_ops::destinations::get(org_id, dest)
+            .await
+            .is_err()
+        {
             return Err(anyhow::anyhow!("Alert destination {dest} not found"));
         };
     }
@@ -164,7 +167,7 @@ pub async fn save(
     _ = &alert.evaluate(None).await?;
 
     // save the alert
-    match db::alerts::set(org_id, stream_type, stream_name, &alert, create).await {
+    match db::scheduled_ops::alerts::set(org_id, stream_type, stream_name, &alert, create).await {
         Ok(_) => {
             if name.is_empty() {
                 set_ownership(org_id, "alerts", Authz::new(&alert.name)).await;
@@ -181,7 +184,7 @@ pub async fn get(
     stream_name: &str,
     name: &str,
 ) -> Result<Option<Alert>, anyhow::Error> {
-    db::alerts::get(org_id, stream_type, stream_name, name).await
+    db::scheduled_ops::alerts::get(org_id, stream_type, stream_name, name).await
 }
 
 pub async fn list(
@@ -190,7 +193,7 @@ pub async fn list(
     stream_name: Option<&str>,
     permitted: Option<Vec<String>>,
 ) -> Result<Vec<Alert>, anyhow::Error> {
-    match db::alerts::list(org_id, stream_type, stream_name).await {
+    match db::scheduled_ops::alerts::list(org_id, stream_type, stream_name).await {
         Ok(alerts) => {
             let mut result = Vec::new();
             for alert in alerts {
@@ -219,7 +222,7 @@ pub async fn delete(
     stream_name: &str,
     name: &str,
 ) -> Result<(), (http::StatusCode, anyhow::Error)> {
-    if db::alerts::get(org_id, stream_type, stream_name, name)
+    if db::scheduled_ops::alerts::get(org_id, stream_type, stream_name, name)
         .await
         .is_err()
     {
@@ -228,7 +231,7 @@ pub async fn delete(
             anyhow::anyhow!("Alert not found"),
         ));
     }
-    match db::alerts::delete(org_id, stream_type, stream_name, name).await {
+    match db::scheduled_ops::alerts::delete(org_id, stream_type, stream_name, name).await {
         Ok(_) => {
             remove_ownership(org_id, "alerts", Authz::new(name)).await;
             Ok(())
@@ -244,17 +247,18 @@ pub async fn enable(
     name: &str,
     value: bool,
 ) -> Result<(), (http::StatusCode, anyhow::Error)> {
-    let mut alert = match db::alerts::get(org_id, stream_type, stream_name, name).await {
-        Ok(Some(alert)) => alert,
-        _ => {
-            return Err((
-                http::StatusCode::NOT_FOUND,
-                anyhow::anyhow!("Alert not found"),
-            ));
-        }
-    };
+    let mut alert =
+        match db::scheduled_ops::alerts::get(org_id, stream_type, stream_name, name).await {
+            Ok(Some(alert)) => alert,
+            _ => {
+                return Err((
+                    http::StatusCode::NOT_FOUND,
+                    anyhow::anyhow!("Alert not found"),
+                ));
+            }
+        };
     alert.enabled = value;
-    db::alerts::set(org_id, stream_type, stream_name, &alert, false)
+    db::scheduled_ops::alerts::set(org_id, stream_type, stream_name, &alert, false)
         .await
         .map_err(|e| (http::StatusCode::INTERNAL_SERVER_ERROR, e))
 }
@@ -265,7 +269,7 @@ pub async fn trigger(
     stream_name: &str,
     name: &str,
 ) -> Result<(), (http::StatusCode, anyhow::Error)> {
-    let alert = match db::alerts::get(org_id, stream_type, stream_name, name).await {
+    let alert = match db::scheduled_ops::alerts::get(org_id, stream_type, stream_name, name).await {
         Ok(Some(alert)) => alert,
         _ => {
             return Err((
