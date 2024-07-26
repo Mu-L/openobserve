@@ -19,21 +19,22 @@ use datafusion::{
     common::{tree_node::Transformed, Result},
     optimizer::{optimizer::ApplyOrder, OptimizerConfig, OptimizerRule},
 };
-use datafusion_expr::{and, col, lit, Filter, LogicalPlan};
+use datafusion_expr::{and, col, lit, Expr, Filter, LogicalPlan};
 
 /// Optimization rule that add _timestamp constraint to table scan
 #[derive(Default)]
 pub struct AddTimestampRule {
-    start_time: i64,
-    end_time: i64,
+    filter: Expr,
 }
 
 impl AddTimestampRule {
     #[allow(missing_docs)]
-    pub fn new() -> Self {
+    pub fn new(start_time: i64, end_time: i64) -> Self {
         Self {
-            start_time: 0,
-            end_time: 0,
+            filter: and(
+                col("_timestamp").gt_eq(lit(start_time)),
+                col("_timestamp").lt(lit(end_time)),
+            ),
         }
     }
 }
@@ -57,15 +58,11 @@ impl OptimizerRule for AddTimestampRule {
         _config: &dyn OptimizerConfig,
     ) -> Result<Transformed<LogicalPlan>> {
         // TODO: current this optimizer only can run once for each plan
-        // TODO: need another optimizer to union filter
+        // TODO: we can modify this rule or add another optimizer to union filter
         match plan {
             LogicalPlan::TableScan(_) => {
-                let filter = and(
-                    col("_timestamp").gt(lit(self.start_time)),
-                    col("_timestamp").lt(lit(self.end_time)),
-                );
                 let filter_plan =
-                    LogicalPlan::Filter(Filter::try_new(filter.clone(), Arc::new(plan))?);
+                    LogicalPlan::Filter(Filter::try_new(self.filter.clone(), Arc::new(plan))?);
                 Ok(Transformed::yes(filter_plan))
             }
             _ => Ok(Transformed::no(plan)),
@@ -112,7 +109,7 @@ mod tests {
     fn observe(_plan: &LogicalPlan, _rule: &dyn OptimizerRule) {}
 
     fn assert_optimized_plan_equal(plan: LogicalPlan, expected: &str) -> Result<()> {
-        assert_optimized_plan_eq(Arc::new(AddTimestampRule::new()), plan, expected)
+        assert_optimized_plan_eq(Arc::new(AddTimestampRule::new(0, 5)), plan, expected)
     }
 
     // from datafusion
@@ -122,7 +119,7 @@ mod tests {
         expected: &str,
     ) -> Result<()> {
         // Apply the rule once
-        let opt_context = OptimizerContext::new().with_max_passes(3);
+        let opt_context = OptimizerContext::new().with_max_passes(1);
 
         let optimizer = Optimizer::with_rules(vec![Arc::clone(&rule)]);
         // let optimizer = Optimizer::with_rules(vec![Arc::new(DecorrelatePredicateSubquery::new())
@@ -139,7 +136,7 @@ mod tests {
         let table_scan = test_table()?;
         let plan = LogicalPlanBuilder::from(table_scan).build()?;
 
-        let expected = "Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        let expected = "Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n  TableScan: test";
         assert_optimized_plan_equal(plan, expected)
     }
@@ -152,7 +149,7 @@ mod tests {
             .build()?;
 
         let expected = "Projection: test.id\
-        \n  Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        \n  Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n    TableScan: test";
         assert_optimized_plan_equal(plan, expected)
     }
@@ -167,7 +164,7 @@ mod tests {
 
         let expected = "Projection: test.id\
         \n  Filter: test.id > Int32(1)\
-        \n    Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        \n    Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n      TableScan: test";
         assert_optimized_plan_equal(plan, expected)
     }
@@ -190,17 +187,17 @@ mod tests {
         \n  Filter: test.name IN (<subquery>) AND test.id = UInt32(1) AND test.id < UInt32(30)\
         \n    Subquery:\
         \n      TableScan: sq\
-        \n    Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        \n    Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n      TableScan: test";
 
         // after DecorrelatePredicateSubquery, the plan look like below
         // let expected = "Projection: test.name
         // \n  Filter: test.id = UInt32(1) AND test.id < UInt32(30)
         // \n    LeftSemi Join:  Filter: test.name = __correlated_sq_1.id
-        // \n      Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)
+        // \n      Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)
         // \n        TableScan: test
         // \n      SubqueryAlias: __correlated_sq_1
-        // \n        Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)
+        // \n        Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)
         // \n          TableScan: sq";
         assert_optimized_plan_equal(plan, expected)
     }
@@ -222,9 +219,9 @@ mod tests {
             .build()?;
 
         let expected = "Inner Join: left.id = right.id\
-        \n  Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        \n  Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n    TableScan: left\
-        \n  Filter: _timestamp > Int64(0) AND _timestamp < Int64(0)\
+        \n  Filter: _timestamp >= Int64(0) AND _timestamp < Int64(5)\
         \n    TableScan: right";
 
         assert_optimized_plan_equal(plan, expected)
