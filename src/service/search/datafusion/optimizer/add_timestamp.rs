@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use config::get_config;
 use datafusion::{
     common::{tree_node::Transformed, Result},
     optimizer::{optimizer::ApplyOrder, OptimizerConfig, OptimizerRule},
@@ -32,10 +33,11 @@ pub struct AddTimestampRule {
 impl AddTimestampRule {
     #[allow(missing_docs)]
     pub fn new(start_time: i64, end_time: i64) -> Self {
+        let column_timestamp = get_config().common.column_timestamp.clone();
         Self {
             filter: and(
-                col("_timestamp").gt_eq(lit(start_time)),
-                col("_timestamp").lt(lit(end_time)),
+                col(&column_timestamp).gt_eq(lit(start_time)),
+                col(&column_timestamp).lt(lit(end_time)),
             ),
         }
     }
@@ -81,8 +83,12 @@ mod tests {
         assert_batches_eq,
         common::{Column, Result},
         datasource::MemTable,
-        optimizer::{Optimizer, OptimizerContext, OptimizerRule},
-        prelude::SessionContext,
+        execution::{
+            context::SessionState,
+            runtime_env::{RuntimeConfig, RuntimeEnv},
+        },
+        optimizer::{push_down_filter::PushDownFilter, Optimizer, OptimizerContext, OptimizerRule},
+        prelude::{SessionConfig, SessionContext},
     };
     use datafusion_expr::{
         and, binary_expr, col, in_subquery, lit, table_scan, JoinType, LogicalPlan,
@@ -232,16 +238,51 @@ mod tests {
 
     #[tokio::test]
     async fn test_real_sql_for_timestamp() {
-        let sqls = [(
-            "select * from t",
-            vec![
-                "+------------+---------+",
-                "| _timestamp | name    |",
-                "+------------+---------+",
-                "| 2          | observe |",
-                "+------------+---------+",
-            ],
-        )];
+        let sqls = [
+            (
+                "select * from t",
+                vec![
+                    "+------------+-------------+",
+                    "| _timestamp | name        |",
+                    "+------------+-------------+",
+                    "| 2          | observe     |",
+                    "| 3          | openobserve |",
+                    "+------------+-------------+",
+                ],
+            ),
+            (
+                "select name from t where name = 'openobserve'",
+                vec![
+                    "+-------------+",
+                    "| name        |",
+                    "+-------------+",
+                    "| openobserve |",
+                    "+-------------+",
+                ],
+            ),
+            (
+                "select t1._timestamp, t1.name from t as t1 join t as t2 on t1.name = t2.name",
+                vec![
+                    "+------------+-------------+",
+                    "| _timestamp | name        |",
+                    "+------------+-------------+",
+                    "| 2          | observe     |",
+                    "| 3          | openobserve |",
+                    "+------------+-------------+",
+                ],
+            ),
+            (
+                "select _timestamp, count(*) from t group by _timestamp",
+                vec![
+                    "+------------+----------+",
+                    "| _timestamp | count(*) |",
+                    "+------------+----------+",
+                    "| 3          | 1        |",
+                    "| 2          | 1        |",
+                    "+------------+----------+",
+                ],
+            ),
+        ];
 
         // define a schema.
         let schema = Arc::new(Schema::new(vec![
@@ -253,23 +294,29 @@ mod tests {
         let batch = RecordBatch::try_new(
             schema.clone(),
             vec![
-                Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5, 6])),
+                Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5])),
                 Arc::new(StringArray::from(vec![
-                    "open",
+                    "openobserve",
                     "observe",
                     "openobserve",
-                    "open",
-                    "observe",
-                    "openobserve",
+                    "oo",
+                    "o2",
                 ])),
             ],
         )
         .unwrap();
 
-        let ctx = SessionContext::new();
+        let state = SessionState::new_with_config_rt(
+            SessionConfig::new(),
+            Arc::new(RuntimeEnv::new(RuntimeConfig::default()).unwrap()),
+        )
+        .with_optimizer_rules(vec![
+            Arc::new(AddTimestampRule::new(2, 4)),
+            Arc::new(PushDownFilter::new()),
+        ]);
+        let ctx = SessionContext::new_with_state(state);
         let provider = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
         ctx.register_table("t", Arc::new(provider)).unwrap();
-        ctx.add_optimizer_rule(Arc::new(AddTimestampRule::new(2, 3)));
 
         for item in sqls {
             let df = ctx.sql(item.0).await.unwrap();
