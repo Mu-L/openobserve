@@ -41,6 +41,7 @@ use crate::{
                 destinations::{DestinationType, DestinationWithTemplate, HTTPType},
                 AlertFrequencyType, Operator, QueryType,
             },
+            stream::StreamParams,
         },
         utils::auth::{remove_ownership, set_ownership},
     },
@@ -292,7 +293,9 @@ impl Alert {
         if self.is_real_time {
             self.query_condition.evaluate_realtime(row).await
         } else {
-            self.query_condition.evaluate_scheduled(self).await
+            self.query_condition
+                .evaluate_scheduled(&self.get_stream_params(), &self.trigger_condition)
+                .await
         }
     }
 
@@ -314,6 +317,14 @@ impl Alert {
             }
         }
         Ok(())
+    }
+
+    pub fn get_stream_params(&self) -> StreamParams {
+        StreamParams {
+            org_id: self.org_id.clone().into(),
+            stream_name: self.stream_name.clone().into(),
+            stream_type: self.stream_type,
+        }
     }
 }
 
@@ -666,7 +677,13 @@ async fn process_dest_template(
             }
             QueryType::Custom => {
                 if let Some(conditions) = &alert.query_condition.conditions {
-                    if let Ok(v) = build_sql(alert, conditions).await {
+                    if let Ok(v) = build_sql(
+                        &alert.get_stream_params(),
+                        &alert.query_condition,
+                        conditions,
+                    )
+                    .await
+                    {
                         alert_query = v;
                     }
                 }
