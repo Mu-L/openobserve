@@ -191,124 +191,50 @@ mod tests {
 
     #[tokio::test]
     async fn test_rewrite_histogram_interval() {
-        let sqls = [(
-            "select histogram(_timestamp, INTERVAL '30 second') from t",
-            vec![
-                "+-----------------------------------------------------------------------------------------------------------------------+",
-                "| histogram(t._timestamp,IntervalMonthDayNano(\"IntervalMonthDayNano { months: 0, days: 0, nanoseconds: 30000000000 }\")) |",
-                "+-----------------------------------------------------------------------------------------------------------------------+",
-                "| 1970-01-01T00:00:00                                                                                                   |",
-                "| 1970-01-01T00:00:00                                                                                                   |",
-                "| 1970-01-01T00:00:00                                                                                                   |",
-                "| 1970-01-01T00:00:00                                                                                                   |",
-                "| 1970-01-01T00:00:00                                                                                                   |",
-                "+-----------------------------------------------------------------------------------------------------------------------+",
-            ],
-        )];
-
-        // define a schema.
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("_timestamp", DataType::Int64, false),
-            Field::new("name", DataType::Utf8, false),
-        ]));
-
-        // define data.
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5])),
-                Arc::new(StringArray::from(vec![
-                    "open",
-                    "observe",
-                    "openobserve",
-                    "o2",
-                    "oo",
-                ])),
-            ],
-        )
-        .unwrap();
-
-        let ctx = SessionContext::new();
-        let provider = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
-        ctx.register_table("t", Arc::new(provider)).unwrap();
-        ctx.register_udf(histogram_udf::HISTOGRAM_UDF.clone());
-        ctx.add_optimizer_rule(Arc::new(RewriteHistogram::new(0, 5)));
-
-        for item in sqls {
-            let df = ctx.sql(item.0).await.unwrap();
-            let data = df.collect().await.unwrap();
-            assert_batches_eq!(item.1, &data);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rewrite_histogram_num() {
-        let sqls = [(
-            "select histogram(_timestamp, 3) from t",
-            vec![
-                "+----------------------------------+",
-                "| histogram(t._timestamp,Int64(3)) |",
-                "+----------------------------------+",
-                "| 1970-01-01T00:00:00              |",
-                "| 1970-01-01T00:00:00              |",
-                "| 1970-01-01T00:00:00              |",
-                "| 1970-01-01T00:00:00              |",
-                "| 1970-01-01T00:00:00              |",
-                "+----------------------------------+",
-            ],
-        )];
-
-        // define a schema.
-        let schema = Arc::new(Schema::new(vec![
-            Field::new("_timestamp", DataType::Int64, false),
-            Field::new("name", DataType::Utf8, false),
-        ]));
-
-        // define data.
-        let batch = RecordBatch::try_new(
-            schema.clone(),
-            vec![
-                Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5])),
-                Arc::new(StringArray::from(vec![
-                    "open",
-                    "observe",
-                    "openobserve",
-                    "o2",
-                    "oo",
-                ])),
-            ],
-        )
-        .unwrap();
-
-        let ctx = SessionContext::new();
-        let provider = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
-        ctx.register_table("t", Arc::new(provider)).unwrap();
-        ctx.register_udf(histogram_udf::HISTOGRAM_UDF.clone());
-        ctx.add_optimizer_rule(Arc::new(RewriteHistogram::new(0, 5)));
-
-        for item in sqls {
-            let df = ctx.sql(item.0).await.unwrap();
-            let data = df.collect().await.unwrap();
-            assert_batches_eq!(item.1, &data);
-        }
-    }
-
-    #[tokio::test]
-    async fn test_rewrite_histogram_default() {
-        let sqls = [(
-            "select histogram(_timestamp) from t",
-            vec![
-                "+-------------------------+",
-                "| histogram(t._timestamp) |",
-                "+-------------------------+",
-                "| 1970-01-01T00:00:00     |",
-                "| 1970-01-01T00:00:00     |",
-                "| 1970-01-01T00:00:00     |",
-                "| 1970-01-01T00:00:00     |",
-                "| 1970-01-01T00:00:00     |",
-                "+-------------------------+",
-            ],
-        )];
+        let sqls = [
+            (
+                "select histogram(_timestamp) from t",
+                vec![
+                    "+-------------------------+",
+                    "| histogram(t._timestamp) |",
+                    "+-------------------------+",
+                    "| 1970-01-01T00:00:00     |",
+                    "| 1970-01-01T00:00:00     |",
+                    "| 1970-01-01T00:00:00     |",
+                    "| 1970-01-01T00:00:00     |",
+                    "| 1970-01-01T00:00:00     |",
+                    "+-------------------------+",
+                ],
+            ),
+            (
+                "select histogram(_timestamp, INTERVAL '30 second') from t",
+                vec![
+                    "+-----------------------------------------------------------------------------------------------------------------------+",
+                    "| histogram(t._timestamp,IntervalMonthDayNano(\"IntervalMonthDayNano { months: 0, days: 0, nanoseconds: 30000000000 }\")) |",
+                    "+-----------------------------------------------------------------------------------------------------------------------+",
+                    "| 1970-01-01T00:00:00                                                                                                   |",
+                    "| 1970-01-01T00:00:00                                                                                                   |",
+                    "| 1970-01-01T00:00:00                                                                                                   |",
+                    "| 1970-01-01T00:00:00                                                                                                   |",
+                    "| 1970-01-01T00:00:00                                                                                                   |",
+                    "+-----------------------------------------------------------------------------------------------------------------------+",
+                ],
+            ),
+            (
+                "select histogram(_timestamp, 5) from t",
+                vec![
+                    "+----------------------------------+",
+                    "| histogram(t._timestamp,Int64(5)) |",
+                    "+----------------------------------+",
+                    "| 1970-01-01T00:00:00              |",
+                    "| 1970-01-01T00:00:00              |",
+                    "| 1970-01-01T00:00:00              |",
+                    "| 1970-01-01T00:00:00              |",
+                    "| 1970-01-01T00:00:00              |",
+                    "+----------------------------------+",
+                ],
+            ),
+        ];
 
         // define a schema.
         let schema = Arc::new(Schema::new(vec![
