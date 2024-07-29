@@ -74,10 +74,15 @@ impl OptimizerRule for AddTimestampRule {
 mod tests {
     use std::sync::Arc;
 
+    use arrow::array::{Int64Array, StringArray};
     use arrow_schema::{DataType, Field, Schema};
     use datafusion::{
+        arrow::record_batch::RecordBatch,
+        assert_batches_eq,
         common::{Column, Result},
+        datasource::MemTable,
         optimizer::{Optimizer, OptimizerContext, OptimizerRule},
+        prelude::SessionContext,
     };
     use datafusion_expr::{
         and, binary_expr, col, in_subquery, lit, table_scan, JoinType, LogicalPlan,
@@ -223,5 +228,53 @@ mod tests {
         \n    TableScan: right";
 
         assert_optimized_plan_equal(plan, expected)
+    }
+
+    #[tokio::test]
+    async fn test_real_sql_for_timestamp() {
+        let sqls = [(
+            "select * from t",
+            vec![
+                "+------------+---------+",
+                "| _timestamp | name    |",
+                "+------------+---------+",
+                "| 2          | observe |",
+                "+------------+---------+",
+            ],
+        )];
+
+        // define a schema.
+        let schema = Arc::new(Schema::new(vec![
+            Field::new("_timestamp", DataType::Int64, false),
+            Field::new("name", DataType::Utf8, false),
+        ]));
+
+        // define data.
+        let batch = RecordBatch::try_new(
+            schema.clone(),
+            vec![
+                Arc::new(Int64Array::from(vec![1, 2, 3, 4, 5, 6])),
+                Arc::new(StringArray::from(vec![
+                    "open",
+                    "observe",
+                    "openobserve",
+                    "open",
+                    "observe",
+                    "openobserve",
+                ])),
+            ],
+        )
+        .unwrap();
+
+        let ctx = SessionContext::new();
+        let provider = MemTable::try_new(schema, vec![vec![batch]]).unwrap();
+        ctx.register_table("t", Arc::new(provider)).unwrap();
+        ctx.add_optimizer_rule(Arc::new(AddTimestampRule::new(2, 3)));
+
+        for item in sqls {
+            let df = ctx.sql(item.0).await.unwrap();
+            let data = df.collect().await.unwrap();
+            assert_batches_eq!(item.1, &data);
+        }
     }
 }
