@@ -1293,6 +1293,9 @@ async fn register_udf(ctx: &mut SessionContext, _org_id: &str) {
     ctx.register_udf(super::udf::spath_udf::SPATH_UDF.clone());
     ctx.register_udf(super::udf::to_arr_string_udf::TO_ARR_STRING.clone());
     ctx.register_udf(super::udf::histogram_udf::HISTOGRAM_UDF.clone());
+    ctx.register_udf(super::udf::match_all_udf::MATCH_ALL_RAW_UDF.clone());
+    ctx.register_udf(super::udf::match_all_udf::MATCH_ALL_RAW_IGNORE_CASE_UDF.clone());
+    ctx.register_udf(super::udf::match_all_udf::MATCH_ALL_UDF.clone());
 
     {
         let udf_list = get_all_transform(_org_id).await;

@@ -15,3 +15,4 @@
 
 pub mod add_timestamp;
 pub mod rewrite_histogram;
+pub mod rewrite_match;
