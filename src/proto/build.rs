@@ -54,6 +54,7 @@ fn main() -> Result<()> {
                 "proto/cluster/filelist.proto",
                 "proto/cluster/metrics.proto",
                 "proto/cluster/search.proto",
+                "proto/cluster/ingest.proto",
                 "proto/cluster/usage.proto",
                 "proto/cluster/querycache.proto",
             ],
