@@ -18,7 +18,7 @@ use std::sync::Arc;
 use arrow_schema::{DataType, IntervalUnit};
 use datafusion::{
     common::{
-        tree_node::{Transformed, TreeNodeRewriter},
+        tree_node::{Transformed, TreeNode, TreeNodeRewriter},
         Result,
     },
     error::DataFusionError,
@@ -75,16 +75,29 @@ impl OptimizerRule for RewriteHistogram {
         plan: LogicalPlan,
         _config: &dyn OptimizerConfig,
     ) -> Result<Transformed<LogicalPlan>> {
-        let mut expr_rewriter = HistogramToDatebin {
-            start_time: self.start_time,
-            end_time: self.end_time,
-        };
+        if plan
+            .expressions()
+            .iter()
+            .map(|expr| expr.exists(|expr| Ok(is_histogram(expr))).unwrap())
+            .any(|x| x)
+        {
+            let mut expr_rewriter = HistogramToDatebin {
+                start_time: self.start_time,
+                end_time: self.end_time,
+            };
 
-        plan.map_expressions(|expr| {
-            let new_expr = rewrite_preserving_name(expr, &mut expr_rewriter)?;
-            Ok(Transformed::yes(new_expr))
-        })
+            plan.map_expressions(|expr| {
+                let new_expr = rewrite_preserving_name(expr, &mut expr_rewriter)?;
+                Ok(Transformed::yes(new_expr))
+            })
+        } else {
+            Ok(Transformed::no(plan))
+        }
     }
+}
+
+fn is_histogram(expr: &Expr) -> bool {
+    matches!(expr, Expr::ScalarFunction(ScalarFunction { func, .. }) if func.name() == HISTOGRAM_UDF_NAME)
 }
 
 // Rewriter for histogram() to date_bin()

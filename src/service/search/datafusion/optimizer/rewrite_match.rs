@@ -68,19 +68,36 @@ impl OptimizerRule for RewriteMatch {
     ) -> Result<Transformed<LogicalPlan>> {
         match plan {
             LogicalPlan::Filter(_) => {
-                if !plan.expressions().iter().map(|expr| expr.exists(|expr| Ok(matches!(expr, Expr::ScalarFunction(ScalarFunction { func, .. }) if func.name() == MATCH_ALL_UDF_NAME || func.name() == MATCH_ALL_RAW_IGNORE_CASE_UDF_NAME || func.name() == MATCH_ALL_RAW_UDF_NAME))).unwrap()).any(|x| x) {
-                    return Ok(Transformed::no(plan));
+                if plan
+                    .expressions()
+                    .iter()
+                    .map(|expr| expr.exists(|expr| Ok(is_match_all(expr))).unwrap())
+                    .any(|x| x)
+                {
+                    let name = get_table_name(&plan);
+                    let fields = self.fields.get(&name).unwrap().clone();
+                    let mut expr_rewriter = MatchToFullTextMatch { fields };
+                    plan.map_expressions(|expr| {
+                        let new_expr = rewrite_preserving_name(expr, &mut expr_rewriter)?;
+                        Ok(Transformed::yes(new_expr))
+                    })
+                } else {
+                    Ok(Transformed::no(plan))
                 }
-                let name = get_table_name(&plan);
-                let fields = self.fields.get(&name).unwrap().clone();
-                let mut expr_rewriter = MatchToFullTextMatch { fields };
-                plan.map_expressions(|expr| {
-                    let new_expr = rewrite_preserving_name(expr, &mut expr_rewriter)?;
-                    Ok(Transformed::yes(new_expr))
-                })
             }
             _ => Ok(Transformed::no(plan)),
         }
+    }
+}
+
+fn is_match_all(expr: &Expr) -> bool {
+    match expr {
+        Expr::ScalarFunction(ScalarFunction { func, .. }) => {
+            func.name() == MATCH_ALL_UDF_NAME
+                || func.name() == MATCH_ALL_RAW_IGNORE_CASE_UDF_NAME
+                || func.name() == MATCH_ALL_RAW_UDF_NAME
+        }
+        _ => false,
     }
 }
 
