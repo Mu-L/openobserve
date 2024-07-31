@@ -142,35 +142,36 @@ impl TreeNodeRewriter for MatchToFullTextMatch {
         match &expr {
             Expr::ScalarFunction(ScalarFunction { func, args }) => {
                 let name = func.name();
-                let Expr::Literal(ScalarValue::Utf8(Some(item))) = args[0].clone() else {
-                    return Err(DataFusionError::Internal(format!(
-                        "Unexpected argument type for match_all() function: {:?}",
-                        args[0]
-                    )));
-                };
-                let expr = Expr::Literal(ScalarValue::Utf8(Some(format!("%{item}%"))));
-                let mut expr_list = Vec::with_capacity(self.fields.len());
-                if name == MATCH_ALL_UDF_NAME || name == MATCH_ALL_RAW_IGNORE_CASE_UDF_NAME {
+                if name == MATCH_ALL_UDF_NAME
+                    || name == MATCH_ALL_RAW_IGNORE_CASE_UDF_NAME
+                    || name == MATCH_ALL_RAW_UDF_NAME
+                {
+                    let Expr::Literal(ScalarValue::Utf8(Some(item))) = args[0].clone() else {
+                        return Err(DataFusionError::Internal(format!(
+                            "Unexpected argument type for match_all() function: {:?}",
+                            args[0]
+                        )));
+                    };
+                    let operator = if name == MATCH_ALL_RAW_UDF_NAME {
+                        Operator::LikeMatch
+                    } else {
+                        Operator::ILikeMatch
+                    };
+                    let mut expr_list = Vec::with_capacity(self.fields.len());
+                    let item = Expr::Literal(ScalarValue::Utf8(Some(format!("%{item}%"))));
                     for field in self.fields.iter() {
                         let new_expr = Expr::BinaryExpr(BinaryExpr {
                             left: Box::new(Expr::Column(Column::new_unqualified(field))),
-                            op: Operator::ILikeMatch, // case insensitive
-                            right: Box::new(expr.clone()),
+                            op: operator,
+                            right: Box::new(item.clone()),
                         });
                         expr_list.push(new_expr);
                     }
-                } else if name == MATCH_ALL_RAW_UDF_NAME {
-                    for field in self.fields.iter() {
-                        let new_expr = Expr::BinaryExpr(BinaryExpr {
-                            left: Box::new(Expr::Column(Column::new_unqualified(field))),
-                            op: Operator::LikeMatch, // case sensitive
-                            right: Box::new(expr.clone()),
-                        });
-                        expr_list.push(new_expr);
-                    }
+                    let new_expr = disjunction(expr_list).unwrap();
+                    Ok(Transformed::yes(new_expr))
+                } else {
+                    Ok(Transformed::no(expr))
                 }
-                let new_expr = disjunction(expr_list).unwrap();
-                Ok(Transformed::yes(new_expr))
             }
             _ => Ok(Transformed::no(expr)),
         }
@@ -221,9 +222,8 @@ mod tests {
                     "+------------+",
                     "| _timestamp |",
                     "+------------+",
-                    "| 2          |",
+                    "| 1          |",
                     "| 3          |",
-                    "| 4          |",
                     "+------------+",
                 ],
             ),
@@ -233,8 +233,9 @@ mod tests {
                     "+------------+",
                     "| _timestamp |",
                     "+------------+",
-                    "| 1          |",
+                    "| 2          |",
                     "| 3          |",
+                    "| 4          |",
                     "+------------+",
                 ],
             ),
