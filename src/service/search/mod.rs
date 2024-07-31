@@ -25,7 +25,7 @@ use config::{
         usage::{RequestStats, UsageType},
     },
     metrics,
-    utils::str::find,
+    utils::{sql::is_aggregate_query, str::find},
 };
 use infra::{
     errors::{Error, ErrorCodes},
@@ -221,7 +221,6 @@ pub async fn search_partition(
         start_time: req.start_time,
         end_time: req.end_time,
         sql: req.sql.to_string(),
-        sql_mode: req.sql_mode.to_string(),
         ..Default::default()
     };
     let search_req = cluster_rpc::SearchRequest {
@@ -271,6 +270,15 @@ pub async fn search_partition(
         compressed_size: compressed_size as usize,
         partitions: vec![],
     };
+
+    // if is aggregate query, return single partitions
+    if let Ok(v) = is_aggregate_query(&req.sql) {
+        if v {
+            resp.partitions.push([req.start_time, req.end_time]);
+            return Ok(resp);
+        }
+    }
+
     let mut total_secs = resp.original_size / cfg.limit.query_group_base_speed / cpu_cores;
     if total_secs * cfg.limit.query_group_base_speed * cpu_cores < resp.original_size {
         total_secs += 1;
@@ -690,7 +698,6 @@ pub async fn search_partition_multi(
                 start_time: req.start_time,
                 end_time: req.end_time,
                 sql: query.to_string(),
-                sql_mode: req.sql_mode.to_string(),
                 regions: req.regions.clone(),
                 clusters: req.clusters.clone(),
                 encoding: req.encoding,

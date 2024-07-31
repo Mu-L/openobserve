@@ -522,10 +522,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
           <template #after>
             <div
               data-test="logs-vrl-function-editor"
-              v-show="
-                searchObj.meta.toggleFunction &&
-                searchObj.meta.logsVisualizeToggle != 'visualize'
-              "
+              v-show="searchObj.meta.toggleFunction"
               style="width: 100%; height: 100%"
             >
               <query-editor
@@ -2434,18 +2431,24 @@ export default defineComponent({
 
     const dashboardPanelDataPageKey = inject(
       "dashboardPanelDataPageKey",
-      "logs"
+      "logs",
     );
-    const { resetDashboardPanelData } = useDashboardPanelData(
-      dashboardPanelDataPageKey
-    );
+    const { dashboardPanelData, resetDashboardPanelData } =
+      useDashboardPanelData(dashboardPanelDataPageKey);
 
     const changeLogsVisualizeToggle = () => {
       // change logs visualize toggle
       searchObj.meta.logsVisualizeToggle = "logs";
       confirmLogsVisualizeModeChangeDialog.value = false;
+
+      // store dashboardPanelData meta object
+      const dashboardPanelDataMetaObj = dashboardPanelData.meta;
+
       // reset old dashboardPanelData
       resetDashboardPanelData();
+
+      // assign, old dashboardPanelData meta object
+      dashboardPanelData.meta = dashboardPanelDataMetaObj;
     };
 
     return {

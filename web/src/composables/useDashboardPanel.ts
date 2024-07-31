@@ -115,6 +115,7 @@ const getDefaultDashboardPanelData: any = () => ({
     showQueryBar: false,
     isConfigPanelOpen: false,
     currentQueryIndex: 0,
+    vrlFunctionToggle: false,
   },
   meta: {
     parsedQuery: "",
@@ -182,6 +183,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       dashboardPanelData.data.queryType === "sql" ? "sql" : "promql";
     const newQuery: any = {
       query: "",
+      vrlFunctionQuery: "",
       customQuery: queryType === "promql",
       fields: {
         stream:
@@ -2693,7 +2695,10 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       dashboardPanelData.data.queries[
         dashboardPanelData.layout.currentQueryIndex
       ].customQuery &&
-      dashboardPanelData.data.queryType != "promql"
+      dashboardPanelData.data.queryType != "promql" &&
+      dashboardPanelData.data.queries[
+        dashboardPanelData.layout.currentQueryIndex
+      ].query
     ) {
       // empty the errors
       dashboardPanelData.meta.errors.queryErrors = [];

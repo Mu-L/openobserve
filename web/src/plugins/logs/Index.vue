@@ -43,7 +43,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
             id="thirdLevel"
             class="row scroll relative-position thirdlevel full-height overflow-hidden logsPageMainSection"
             style="width: 100%"
-            v-if="searchObj.meta.logsVisualizeToggle == 'logs'"
+            v-show="searchObj.meta.logsVisualizeToggle == 'logs'"
           >
             <!-- Note: Splitter max-height to be dynamically calculated with JS -->
             <q-splitter
@@ -245,7 +245,10 @@ color="primary" size="md" />
               </template>
             </q-splitter>
           </div>
-          <div else :style="`height: calc(100vh - ${splitterModel}vh - 40px);`">
+          <div
+            v-show="searchObj.meta.logsVisualizeToggle == 'visualize'"
+            :style="`height: calc(100vh - ${splitterModel}vh - 40px);`"
+          >
             <VisualizeLogsQuery
               :visualizeChartData="visualizeChartData"
               :errorData="visualizeErrorData"
@@ -895,6 +898,28 @@ export default defineComponent({
       return true;
     };
 
+    watch(
+      () => [
+        searchObj.data.tempFunctionContent,
+        searchObj.meta.logsVisualizeToggle,
+      ],
+      () => {
+        if (
+          searchObj.meta.logsVisualizeToggle == "visualize" &&
+          searchObj.meta.toggleFunction &&
+          searchObj.data.tempFunctionContent
+        ) {
+          dashboardPanelData.data.queries[
+            dashboardPanelData.layout.currentQueryIndex
+          ].vrlFunctionQuery = searchObj.data.tempFunctionContent;
+        } else {
+          dashboardPanelData.data.queries[
+            dashboardPanelData.layout.currentQueryIndex
+          ].vrlFunctionQuery = "";
+        }
+      },
+    );
+
     const setFieldsAndConditions = async () => {
       let logsQuery = searchObj.data.query ?? "";
 
@@ -973,19 +998,8 @@ export default defineComponent({
           // reset old rendered chart
           visualizeChartData.value = {};
 
-          // hide VRL function editor
-          searchObj.config.fnSplitterModel = 99.5;
-
           // set fields and conditions
           await setFieldsAndConditions();
-        } else {
-          // else check if VRL function toggle is true or false
-          // based on that set the splitter model
-          if (searchObj.meta.toggleFunction == false) {
-            searchObj.config.fnSplitterModel = 99.5;
-          } else {
-            searchObj.config.fnSplitterModel = 60;
-          }
         }
       }
     );
