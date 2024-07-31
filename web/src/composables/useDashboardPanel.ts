@@ -1676,8 +1676,9 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
           .map((value: any) => `'${value}'`)
           .join(", ")})`;
       } else if (condition.type === "condition" && condition.operator != null) {
-        let selectFilter = `${condition.column} `;
+        let selectFilter = "";
         if (["Is Null", "Is Not Null"].includes(condition.operator)) {
+          selectFilter += `${condition.column} `;
           switch (condition.operator) {
             case "Is Null":
               selectFilter += `IS NULL`;
@@ -1686,7 +1687,10 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
               selectFilter += `IS NOT NULL`;
               break;
           }
-        } else if (condition.value != null && condition.value != "") {
+        } else if (condition.operator === "Match ALL") {
+          selectFilter += `match_all(${condition.value})`;
+        } else if (condition.value != null && condition.value !== "") {
+          selectFilter += `${condition.column} `;
           switch (condition.operator) {
             case "=":
             case "<>":
@@ -1695,9 +1699,6 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
             case "<=":
             case ">=":
               selectFilter += `${condition.operator} ${condition.value}`;
-              break;
-            case "Match ALL":
-              selectFilter += `match_all(${condition.value})`;
               break;
             case "Contains":
               selectFilter += `LIKE '%${condition.value}%'`;
