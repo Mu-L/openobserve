@@ -256,6 +256,16 @@ mod tests {
                     "+------------+",
                 ],
             ),
+            (
+                "select _timestamp from t where match_all_raw_ignore_case('observe') and _timestamp = 2",
+                vec![
+                    "+------------+",
+                    "| _timestamp |",
+                    "+------------+",
+                    "| 2          |",
+                    "+------------+",
+                ],
+            ),
         ];
 
         // define a schema.
