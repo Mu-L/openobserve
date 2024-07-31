@@ -68,6 +68,9 @@ impl OptimizerRule for RewriteMatch {
     ) -> Result<Transformed<LogicalPlan>> {
         match plan {
             LogicalPlan::Filter(_) => {
+                if !plan.expressions().iter().map(|expr| expr.exists(|expr| Ok(matches!(expr, Expr::ScalarFunction(ScalarFunction { func, .. }) if func.name() == MATCH_ALL_UDF_NAME || func.name() == MATCH_ALL_RAW_IGNORE_CASE_UDF_NAME || func.name() == MATCH_ALL_RAW_UDF_NAME))).unwrap()).any(|x| x) {
+                    return Ok(Transformed::no(plan));
+                }
                 let name = get_table_name(&plan);
                 let fields = self.fields.get(&name).unwrap().clone();
                 let mut expr_rewriter = MatchToFullTextMatch { fields };
@@ -218,6 +221,18 @@ mod tests {
                     "+------------+",
                     "| _timestamp |",
                     "+------------+",
+                    "| 2          |",
+                    "| 3          |",
+                    "| 4          |",
+                    "+------------+",
+                ],
+            ),
+            (
+                "select _timestamp from t where match_all_raw_ignore_case('observe')",
+                vec![
+                    "+------------+",
+                    "| _timestamp |",
+                    "+------------+",
                     "| 1          |",
                     "| 3          |",
                     "+------------+",
@@ -241,12 +256,12 @@ mod tests {
                     "open",
                     "observe",
                     "openobserve",
-                    "o2",
+                    "OBserve",
                     "oo",
                 ])),
                 Arc::new(StringArray::from(vec![
                     "o2",
-                    "observe",
+                    "obSERVE",
                     "openobserve",
                     "o2",
                     "oo",
