@@ -15,6 +15,7 @@
 
 use std::sync::Arc;
 
+use config::get_config;
 use datafusion::{
     common::{
         tree_node::{Transformed, TreeNode, TreeNodeRecursion},
@@ -57,89 +58,40 @@ impl OptimizerRule for AddSortAndLimitRule {
         _config: &dyn OptimizerConfig,
     ) -> Result<Transformed<LogicalPlan>> {
         let is_complex = plan.exists(|plan| Ok(is_complex_query(plan)))?;
+        let mut is_stop = true;
         let mut transformed = match plan {
-            LogicalPlan::Projection(mut proj) => {
-                match proj.input.as_ref() {
-                    LogicalPlan::Limit(_) => {
-                        // TODO:
-                        Transformed::yes(LogicalPlan::Projection(proj))
-                    }
-                    LogicalPlan::Sort(sort) => {
-                        let limit = LogicalPlan::Limit(Limit {
-                            skip: 0,
-                            fetch: Some(self.limit),
-                            input: Arc::new(LogicalPlan::Sort(sort.clone())),
-                        });
-                        proj.input = Arc::new(limit);
-                        Transformed::yes(LogicalPlan::Projection(proj))
-                    }
-                    _ => {
-                        let timestamp = Expr::Sort(SortExpr {
-                            expr: Box::new(col("_timestamp")),
-                            asc: false,
-                            nulls_first: false,
-                        });
-                        let sort = LogicalPlan::Sort(Sort {
-                            expr: vec![timestamp],
-                            input: proj.input.clone(),
-                            fetch: Some(self.limit),
-                        });
-                        let limit = LogicalPlan::Limit(Limit {
-                            skip: 0,
-                            fetch: Some(self.limit),
-                            input: Arc::new(sort),
-                        });
-                        proj.input = Arc::new(limit);
-                        Transformed::yes(LogicalPlan::Projection(proj))
-                    }
-                }
+            LogicalPlan::Projection(_) => {
+                is_stop = false;
+                Transformed::no(plan)
             }
             LogicalPlan::Limit(mut limit) => match limit.input.as_ref() {
-                LogicalPlan::Sort(_) => Transformed::yes(LogicalPlan::Limit(limit)),
+                LogicalPlan::Sort(_) => Transformed::no(LogicalPlan::Limit(limit)),
                 _ => {
-                    let timestamp = Expr::Sort(SortExpr {
-                        expr: Box::new(col("_timestamp")),
-                        asc: false,
-                        nulls_first: false,
-                    });
-                    let sort = LogicalPlan::Sort(Sort {
-                        expr: vec![timestamp],
-                        input: limit.input.clone(),
-                        fetch: Some(self.limit),
-                    });
-                    limit.input = Arc::new(sort);
-                    Transformed::yes(LogicalPlan::Limit(limit))
+                    if is_complex {
+                        Transformed::no(LogicalPlan::Limit(limit))
+                    } else {
+                        // the add sort plan should reflect the limit
+                        let fetch = limit.fetch.unwrap();
+                        let sort = generate_sort_plan(limit.input.clone(), fetch);
+                        limit.input = Arc::new(sort);
+                        Transformed::yes(LogicalPlan::Limit(limit))
+                    }
                 }
             },
-            LogicalPlan::Sort(sort) => {
-                let limit = LogicalPlan::Limit(Limit {
-                    skip: 0,
-                    fetch: Some(self.limit),
-                    input: Arc::new(LogicalPlan::Sort(sort)),
-                });
-                Transformed::yes(limit)
+            LogicalPlan::Sort(_) => {
+                Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit))
             }
             _ => {
-                let timestamp = Expr::Sort(SortExpr {
-                    expr: Box::new(col("_timestamp")),
-                    asc: false,
-                    nulls_first: false,
-                });
-                let sort = LogicalPlan::Sort(Sort {
-                    expr: vec![timestamp],
-                    input: Arc::new(plan),
-                    fetch: Some(self.limit),
-                });
-                let limit = LogicalPlan::Limit(Limit {
-                    skip: 0,
-                    fetch: Some(self.limit),
-                    input: Arc::new(sort),
-                });
-                Transformed::yes(limit)
-                // Transformed::no(plan)
+                if is_complex {
+                    Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit))
+                } else {
+                    Transformed::yes(generate_limit_and_sort_plan(Arc::new(plan), self.limit))
+                }
             }
         };
-        transformed.tnr = TreeNodeRecursion::Stop;
+        if is_stop {
+            transformed.tnr = TreeNodeRecursion::Stop;
+        }
         Ok(transformed)
     }
 }
@@ -156,12 +108,45 @@ fn is_complex_query(plan: &LogicalPlan) -> bool {
     }
 }
 
-fn construct_limit_plan(plan: LogicalPlan) -> LogicalPlan {
-    plan
+fn generate_limit_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
+    LogicalPlan::Limit(Limit {
+        skip: 0,
+        fetch: Some(limit),
+        input,
+    })
 }
 
-fn construct_limit_and_sort_plan(plan: LogicalPlan) -> LogicalPlan {
-    plan
+fn generate_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
+    let config = get_config();
+    let timestamp = Expr::Sort(SortExpr {
+        expr: Box::new(col(config.common.column_timestamp.clone())),
+        asc: false,
+        nulls_first: false,
+    });
+    LogicalPlan::Sort(Sort {
+        expr: vec![timestamp],
+        input,
+        fetch: Some(limit),
+    })
+}
+
+fn generate_limit_and_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
+    let config = get_config();
+    let timestamp = Expr::Sort(SortExpr {
+        expr: Box::new(col(config.common.column_timestamp.clone())),
+        asc: false,
+        nulls_first: false,
+    });
+    let sort = LogicalPlan::Sort(Sort {
+        expr: vec![timestamp],
+        input,
+        fetch: Some(limit),
+    });
+    LogicalPlan::Limit(Limit {
+        skip: 0,
+        fetch: Some(limit),
+        input: Arc::new(sort),
+    })
 }
 
 #[cfg(test)]
@@ -203,6 +188,30 @@ mod tests {
                 ],
             ),
             (
+                "select * from t limit 3",
+                vec![
+                    "+------------+-------------+",
+                    "| _timestamp | name        |",
+                    "+------------+-------------+",
+                    "| 5          | o2          |",
+                    "| 4          | oo          |",
+                    "| 3          | openobserve |",
+                    "+------------+-------------+",
+                ],
+            ),
+            // (
+            //     "select name from t limit 3",
+            //     vec![
+            //         "+------------+-------------+",
+            //         "| _timestamp | name        |",
+            //         "+------------+-------------+",
+            //         "| 5          | o2          |",
+            //         "| 4          | oo          |",
+            //         "| 3          | openobserve |",
+            //         "+------------+-------------+",
+            //     ],
+            // ),
+            (
                 "select * from t where _timestamp > 2 and name != 'oo'",
                 vec![
                     "+------------+-------------+",
@@ -224,13 +233,14 @@ mod tests {
                 ],
             ),
             (
-                "select name, count(*) from t group by name order by name",
+                "select name, count(*) as cnt from t group by name order by cnt desc",
                 vec![
-                    "+----------+",
-                    "| count(*) |",
-                    "+----------+",
-                    "| 5        |",
-                    "+----------+",
+                    "+-------------+-----+",
+                    "| name        | cnt |",
+                    "+-------------+-----+",
+                    "| openobserve | 2   |",
+                    "| oo          | 1   |",
+                    "+-------------+-----+",
                 ],
             ),
         ];
