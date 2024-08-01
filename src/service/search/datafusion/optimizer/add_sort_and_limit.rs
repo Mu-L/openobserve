@@ -18,7 +18,9 @@ use std::sync::Arc;
 use config::get_config;
 use datafusion::{
     common::{
-        tree_node::{Transformed, TreeNode, TreeNodeRecursion},
+        tree_node::{
+            Transformed, TransformedResult, TreeNode, TreeNodeRecursion, TreeNodeRewriter,
+        },
         Result,
     },
     optimizer::{optimizer::ApplyOrder, OptimizerConfig, OptimizerRule},
@@ -123,6 +125,23 @@ fn generate_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
         asc: false,
         nulls_first: false,
     });
+    let schema = input.schema();
+    if schema
+        .field_with_name(None, config.common.column_timestamp.as_str())
+        .is_err()
+    {
+        let mut input = input.as_ref().clone();
+        input = input
+            .rewrite(&mut ChangeTableScanSchema::new())
+            .data()
+            .unwrap();
+        // add _timestamp to the schema
+        return LogicalPlan::Limit(Limit {
+            skip: 0,
+            fetch: Some(limit),
+            input: Arc::new(input),
+        });
+    }
     LogicalPlan::Sort(Sort {
         expr: vec![timestamp],
         input,
@@ -137,16 +156,59 @@ fn generate_limit_and_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> Logica
         asc: false,
         nulls_first: false,
     });
-    let sort = LogicalPlan::Sort(Sort {
+    let mut sort = LogicalPlan::Sort(Sort {
         expr: vec![timestamp],
         input,
         fetch: Some(limit),
     });
+    let schema = sort.schema();
+    if schema
+        .field_with_name(None, config.common.column_timestamp.as_str())
+        .is_err()
+    {
+        sort = sort
+            .rewrite(&mut ChangeTableScanSchema::new())
+            .data()
+            .unwrap();
+        // add _timestamp to the schema
+        return LogicalPlan::Limit(Limit {
+            skip: 0,
+            fetch: Some(limit),
+            input: Arc::new(sort),
+        });
+    }
     LogicalPlan::Limit(Limit {
         skip: 0,
         fetch: Some(limit),
         input: Arc::new(sort),
     })
+}
+
+#[allow(dead_code)]
+struct ChangeTableScanSchema {}
+
+impl ChangeTableScanSchema {
+    #[allow(dead_code)]
+    fn new() -> Self {
+        Self {}
+    }
+}
+
+impl TreeNodeRewriter for ChangeTableScanSchema {
+    type Node = LogicalPlan;
+
+    fn f_down(&mut self, node: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
+        let mut transformed = match node {
+            LogicalPlan::TableScan(mut scan) => {
+                let schema = scan.projected_schema.clone();
+                scan.projected_schema = schema;
+                Transformed::yes(LogicalPlan::TableScan(scan))
+            }
+            _ => Transformed::no(node),
+        };
+        transformed.tnr = TreeNodeRecursion::Stop;
+        Ok(transformed)
+    }
 }
 
 #[cfg(test)]
@@ -199,18 +261,18 @@ mod tests {
                     "+------------+-------------+",
                 ],
             ),
-            // (
-            //     "select name from t limit 3",
-            //     vec![
-            //         "+------------+-------------+",
-            //         "| _timestamp | name        |",
-            //         "+------------+-------------+",
-            //         "| 5          | o2          |",
-            //         "| 4          | oo          |",
-            //         "| 3          | openobserve |",
-            //         "+------------+-------------+",
-            //     ],
-            // ),
+            (
+                "select name from t limit 3",
+                vec![
+                    "+-------------+",
+                    "| name        |",
+                    "+-------------+",
+                    "| openobserve |",
+                    "| observe     |",
+                    "| openobserve |",
+                    "+-------------+",
+                ],
+            ),
             (
                 "select * from t where _timestamp > 2 and name != 'oo'",
                 vec![
