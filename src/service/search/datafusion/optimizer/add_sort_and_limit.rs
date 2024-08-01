@@ -71,7 +71,7 @@ impl OptimizerRule for AddSortAndLimitRule {
                         Transformed::no(LogicalPlan::Limit(limit))
                     } else {
                         // the add sort plan should reflect the limit
-                        let fetch = limit.fetch.unwrap();
+                        let fetch = limit.fetch.unwrap() + limit.skip;
                         let sort = generate_sort_plan(limit.input.clone(), fetch);
                         limit.input = Arc::new(sort);
                         Transformed::yes(LogicalPlan::Limit(limit))
