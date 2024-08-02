@@ -2987,8 +2987,8 @@ const useLogs = () => {
           )
         ) {
           searchObj.data.resultGrid.columns.push({
-            name: "timestamp",
-            id: "timestamp",
+            name: "@timestamp",
+            id: "@timestamp",
             accessorFn: (row: any) =>
               timestampToTimezoneDate(
                 row[store.state.zoConfig.timestamp_column] / 1000,
@@ -3029,8 +3029,8 @@ const useLogs = () => {
         // searchObj.data.stream.selectedFields.forEach((field: any) => {
         if (searchObj.data.hasSearchDataTimestampField == true) {
           searchObj.data.resultGrid.columns.unshift({
-            name: "timestamp",
-            id: "timestamp",
+            name: "@timestamp",
+            id: "@timestamp",
             accessorFn: (row: any) =>
               timestampToTimezoneDate(
                 row[store.state.zoConfig.timestamp_column] / 1000,
