@@ -21,11 +21,11 @@ use datafusion::{
         tree_node::{
             Transformed, TransformedResult, TreeNode, TreeNodeRecursion, TreeNodeRewriter,
         },
-        Result,
+        DFSchema, Result,
     },
     optimizer::{optimizer::ApplyOrder, OptimizerConfig, OptimizerRule},
 };
-use datafusion_expr::{col, Expr, Limit, LogicalPlan, Sort, SortExpr};
+use datafusion_expr::{col, Expr, Limit, LogicalPlan, Projection, Sort, SortExpr, TableScan};
 
 /// Optimization rule that add sort and limit to table scan
 #[derive(Default)]
@@ -61,38 +61,48 @@ impl OptimizerRule for AddSortAndLimitRule {
     ) -> Result<Transformed<LogicalPlan>> {
         let is_complex = plan.exists(|plan| Ok(is_complex_query(plan)))?;
         let mut is_stop = true;
-        let mut transformed = match plan {
+        let (mut transformed, schema) = match plan {
             LogicalPlan::Projection(_) => {
                 is_stop = false;
-                Transformed::no(plan)
+                (Transformed::no(plan), None)
             }
             LogicalPlan::Limit(mut limit) => match limit.input.as_ref() {
-                LogicalPlan::Sort(_) => Transformed::no(LogicalPlan::Limit(limit)),
+                LogicalPlan::Sort(_) => (Transformed::no(LogicalPlan::Limit(limit)), None),
                 _ => {
                     if is_complex {
-                        Transformed::no(LogicalPlan::Limit(limit))
+                        (Transformed::no(LogicalPlan::Limit(limit)), None)
                     } else {
                         // the add sort plan should reflect the limit
                         let fetch = limit.fetch.unwrap() + limit.skip;
-                        let sort = generate_sort_plan(limit.input.clone(), fetch);
+                        let (sort, schema) = generate_sort_plan(limit.input.clone(), fetch);
                         limit.input = Arc::new(sort);
-                        Transformed::yes(LogicalPlan::Limit(limit))
+                        (Transformed::yes(LogicalPlan::Limit(limit)), schema)
                     }
                 }
             },
-            LogicalPlan::Sort(_) => {
-                Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit))
-            }
+            LogicalPlan::Sort(_) => (
+                Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit)),
+                None,
+            ),
             _ => {
                 if is_complex {
-                    Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit))
+                    (
+                        Transformed::yes(generate_limit_plan(Arc::new(plan), self.limit)),
+                        None,
+                    )
                 } else {
-                    Transformed::yes(generate_limit_and_sort_plan(Arc::new(plan), self.limit))
+                    let (plan, schema) = generate_limit_and_sort_plan(Arc::new(plan), self.limit);
+                    (Transformed::yes(plan), schema)
                 }
             }
         };
         if is_stop {
             transformed.tnr = TreeNodeRecursion::Stop;
+        }
+        if let Some(schema) = schema {
+            let plan = transformed.data;
+            let proj = LogicalPlan::Projection(Projection::new_from_schema(Arc::new(plan), schema));
+            transformed.data = proj;
         }
         Ok(transformed)
     }
@@ -118,14 +128,17 @@ fn generate_limit_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
     })
 }
 
-fn generate_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
+fn generate_sort_plan(
+    input: Arc<LogicalPlan>,
+    limit: usize,
+) -> (LogicalPlan, Option<Arc<DFSchema>>) {
     let config = get_config();
     let timestamp = Expr::Sort(SortExpr {
         expr: Box::new(col(config.common.column_timestamp.clone())),
         asc: false,
         nulls_first: false,
     });
-    let schema = input.schema();
+    let schema = input.schema().clone();
     if schema
         .field_with_name(None, config.common.column_timestamp.as_str())
         .is_err()
@@ -135,21 +148,29 @@ fn generate_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
             .rewrite(&mut ChangeTableScanSchema::new())
             .data()
             .unwrap();
-        // add _timestamp to the schema
-        return LogicalPlan::Limit(Limit {
-            skip: 0,
-            fetch: Some(limit),
-            input: Arc::new(input),
-        });
+        return (
+            LogicalPlan::Sort(Sort {
+                expr: vec![timestamp],
+                input: Arc::new(input),
+                fetch: Some(limit),
+            }),
+            Some(schema),
+        );
     }
-    LogicalPlan::Sort(Sort {
-        expr: vec![timestamp],
-        input,
-        fetch: Some(limit),
-    })
+    (
+        LogicalPlan::Sort(Sort {
+            expr: vec![timestamp],
+            input,
+            fetch: Some(limit),
+        }),
+        None,
+    )
 }
 
-fn generate_limit_and_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
+fn generate_limit_and_sort_plan(
+    input: Arc<LogicalPlan>,
+    limit: usize,
+) -> (LogicalPlan, Option<Arc<DFSchema>>) {
     let config = get_config();
     let timestamp = Expr::Sort(SortExpr {
         expr: Box::new(col(config.common.column_timestamp.clone())),
@@ -161,7 +182,7 @@ fn generate_limit_and_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> Logica
         input,
         fetch: Some(limit),
     });
-    let schema = sort.schema();
+    let schema = sort.schema().clone();
     if schema
         .field_with_name(None, config.common.column_timestamp.as_str())
         .is_err()
@@ -170,18 +191,23 @@ fn generate_limit_and_sort_plan(input: Arc<LogicalPlan>, limit: usize) -> Logica
             .rewrite(&mut ChangeTableScanSchema::new())
             .data()
             .unwrap();
-        // add _timestamp to the schema
-        return LogicalPlan::Limit(Limit {
+        return (
+            LogicalPlan::Limit(Limit {
+                skip: 0,
+                fetch: Some(limit),
+                input: Arc::new(sort),
+            }),
+            Some(schema),
+        );
+    }
+    (
+        LogicalPlan::Limit(Limit {
             skip: 0,
             fetch: Some(limit),
             input: Arc::new(sort),
-        });
-    }
-    LogicalPlan::Limit(Limit {
-        skip: 0,
-        fetch: Some(limit),
-        input: Arc::new(sort),
-    })
+        }),
+        None,
+    )
 }
 
 #[allow(dead_code)]
@@ -197,12 +223,22 @@ impl ChangeTableScanSchema {
 impl TreeNodeRewriter for ChangeTableScanSchema {
     type Node = LogicalPlan;
 
-    fn f_down(&mut self, node: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
+    fn f_up(&mut self, node: LogicalPlan) -> Result<Transformed<LogicalPlan>> {
         let mut transformed = match node {
-            LogicalPlan::TableScan(mut scan) => {
-                let schema = scan.projected_schema.clone();
-                scan.projected_schema = schema;
-                Transformed::yes(LogicalPlan::TableScan(scan))
+            LogicalPlan::TableScan(scan) => {
+                let schema = scan.source.schema();
+                let timestamp_idx =
+                    schema.index_of(get_config().common.column_timestamp.as_str())?;
+                let mut projection = scan.projection.clone().unwrap();
+                projection.push(timestamp_idx);
+                let table_scan = TableScan::try_new(
+                    scan.table_name,
+                    scan.source,
+                    Some(projection),
+                    scan.filters,
+                    scan.fetch,
+                )?;
+                Transformed::yes(LogicalPlan::TableScan(table_scan))
             }
             _ => Transformed::no(node),
         };
@@ -267,8 +303,8 @@ mod tests {
                     "+-------------+",
                     "| name        |",
                     "+-------------+",
-                    "| openobserve |",
-                    "| observe     |",
+                    "| o2          |",
+                    "| oo          |",
                     "| openobserve |",
                     "+-------------+",
                 ],
