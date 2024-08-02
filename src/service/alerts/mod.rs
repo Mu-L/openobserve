@@ -64,10 +64,12 @@ pub async fn save(
         alert.name = name.to_string();
     }
     alert.name = alert.name.trim().to_string();
-    // Replace the characters not supported by ofga with '_'
-    alert.name = RE_OFGA_UNSUPPORTED_NAME
-        .replace_all(&alert.name, "_")
-        .to_string();
+    // Don't allow the characters not supported by ofga
+    if is_ofga_unsupported(&alert.name) {
+        return Err(anyhow::anyhow!(
+            "Alert name cannot contain ':', '#', '?' and space characters"
+        ));
+    }
     alert.org_id = org_id.to_string();
     let stream_type = alert.stream_type;
     alert.stream_name = stream_name.to_string();
