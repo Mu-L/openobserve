@@ -173,42 +173,14 @@ fn generate_limit_and_sort_plan(
     input: Arc<LogicalPlan>,
     limit: usize,
 ) -> (LogicalPlan, Option<Arc<DFSchema>>) {
-    let config = get_config();
-    let timestamp = Expr::Sort(SortExpr {
-        expr: Box::new(col(config.common.column_timestamp.clone())),
-        asc: false,
-        nulls_first: false,
-    });
-    let mut sort = LogicalPlan::Sort(Sort {
-        expr: vec![timestamp],
-        input,
-        fetch: Some(limit),
-    });
-    let schema = sort.schema().clone();
-    if schema
-        .field_with_name(None, config.common.column_timestamp.as_str())
-        .is_err()
-    {
-        sort = sort
-            .rewrite(&mut ChangeTableScanSchema::new())
-            .data()
-            .unwrap();
-        return (
-            LogicalPlan::Limit(Limit {
-                skip: 0,
-                fetch: Some(limit),
-                input: Arc::new(sort),
-            }),
-            Some(schema),
-        );
-    }
+    let (sort, schema) = generate_sort_plan(input, limit);
     (
         LogicalPlan::Limit(Limit {
             skip: 0,
             fetch: Some(limit),
             input: Arc::new(sort),
         }),
-        None,
+        schema,
     )
 }
 
