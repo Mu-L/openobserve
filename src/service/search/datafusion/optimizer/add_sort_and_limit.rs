@@ -110,14 +110,16 @@ impl OptimizerRule for AddSortAndLimitRule {
 
 // check if the plan is a complex query that we can't add sort _timestamp
 fn is_complex_query(plan: &LogicalPlan) -> bool {
-    match plan {
+    matches!(
+        plan,
         LogicalPlan::Aggregate(_)
-        | LogicalPlan::Join(_)
-        | LogicalPlan::CrossJoin(_)
-        | LogicalPlan::Distinct(_)
-        | LogicalPlan::Subquery(_) => true,
-        _ => false,
-    }
+            | LogicalPlan::Join(_)
+            | LogicalPlan::CrossJoin(_)
+            | LogicalPlan::Distinct(_)
+            | LogicalPlan::RecursiveQuery(_)
+            | LogicalPlan::SubqueryAlias(_)
+            | LogicalPlan::Subquery(_)
+    )
 }
 
 fn generate_limit_plan(input: Arc<LogicalPlan>, limit: usize) -> LogicalPlan {
