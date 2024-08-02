@@ -50,7 +50,7 @@ along with this program.  If not, see <http://www.gnu.org/licenses/>.
               Math.max(
                 1,
                 searchObj.data.queryResults?.partitionDetail?.paginations
-                  ?.length || 0
+                  ?.length || 0,
               )
             "
             :input="false"
@@ -204,7 +204,6 @@ import NotEqualIcon from "../../components/icons/NotEqualIcon.vue";
 import useLogs from "../../composables/useLogs";
 import { convertLogData } from "@/utils/logs/convertLogData";
 import SanitizedHtmlRenderer from "@/components/SanitizedHtmlRenderer.vue";
-import TenstackTable from "./TenstackTable.vue";
 
 export default defineComponent({
   name: "SearchResult",
@@ -215,10 +214,10 @@ export default defineComponent({
     NotEqualIcon,
     JsonPreview: defineAsyncComponent(() => import("./JsonPreview.vue")),
     ChartRenderer: defineAsyncComponent(
-      () => import("@/components/dashboards/panels/ChartRenderer.vue")
+      () => import("@/components/dashboards/panels/ChartRenderer.vue"),
     ),
     SanitizedHtmlRenderer,
-    TenstackTable,
+    TenstackTable: defineAsyncComponent(() => import("./TenstackTable.vue")),
   },
   emits: [
     "update:scroll",
@@ -249,7 +248,7 @@ export default defineComponent({
           this.searchObj.data.resultGrid.currentPage <=
           Math.round(
             this.searchObj.data.queryResults.total /
-              this.searchObj.meta.resultGrid.rowsPerPage
+              this.searchObj.meta.resultGrid.rowsPerPage,
           )
         ) {
           this.searchObj.data.resultGrid.currentPage =
@@ -268,7 +267,7 @@ export default defineComponent({
         if (
           this.pageNumberInput >
           Math.ceil(
-            this.searchObj.data.queryResults.partitionDetail.paginations.length
+            this.searchObj.data.queryResults.partitionDetail.paginations.length,
           )
         ) {
           this.$q.notify({
@@ -358,7 +357,7 @@ export default defineComponent({
         plotChart.value = convertLogData(
           searchObj.data.histogram.xData,
           searchObj.data.histogram.yData,
-          searchObj.data.histogram.chartParams
+          searchObj.data.histogram.chartParams,
         );
         // plotChart.value.forceReLayout();
       }
@@ -385,7 +384,7 @@ export default defineComponent({
       const newIndex = getRowIndex(
         isNext,
         isPrev,
-        Number(searchObj.meta.resultGrid.navigation.currentRowIndex)
+        Number(searchObj.meta.resultGrid.navigation.currentRowIndex),
       );
       searchObj.meta.resultGrid.navigation.currentRowIndex = newIndex;
     };
@@ -412,7 +411,7 @@ export default defineComponent({
       if (searchObj.data.stream.selectedFields.includes(fieldName)) {
         searchObj.data.stream.selectedFields =
           searchObj.data.stream.selectedFields.filter(
-            (v: any) => v !== fieldName
+            (v: any) => v !== fieldName,
           );
       } else {
         searchObj.data.stream.selectedFields.push(fieldName);
@@ -431,7 +430,7 @@ export default defineComponent({
           type: "positive",
           message: "Content Copied Successfully!",
           timeout: 1000,
-        })
+        }),
       );
     };
 
@@ -448,7 +447,7 @@ export default defineComponent({
       () => searchObj.config.splitterModel,
       (newValue, oldValue) => {
         console.log(`splitterModel changed from ${oldValue} to ${newValue}`);
-      }
+      },
     );
 
     return {
