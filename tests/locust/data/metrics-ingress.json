@@ -1,0 +1,23 @@
+{
+    "metadata": [
+        {
+            "name": "metrics stream name",
+            "metric_type": "counter / gauge / histogram / summary",
+            "help": "help text"
+        }
+    ],
+    "timeseries": [
+        {
+            "labels": {
+                "label_name1": "label_value1",
+                "label_name2": "label_value2"
+            },
+            "samples": [
+                {
+                    "timestamp": 1687175143000, 
+                    "value": 1.2 
+                }
+            ]
+        }
+    ]
+}
