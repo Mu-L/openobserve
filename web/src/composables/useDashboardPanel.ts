@@ -1664,6 +1664,7 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       ...dashboardPanelData.meta.stream.vrlFunctionFieldList,
     ].find((field: any) => field?.name === column);
     console.log("field", field);
+
     return field ? field.type : null;
   };
 
@@ -1680,9 +1681,9 @@ const useDashboardPanelData = (pageKey: string = "dashboard") => {
       // Escape single quotes by doubling them
       const escapedValue = value.replace(/'/g, "''");
       // Check if the value already has quotes
-      if (escapedValue.startsWith("'") && escapedValue.endsWith("'")) {
-        console.log("value if utf8", escapedValue);
-        return escapedValue;
+      if (value.startsWith("'") && value.endsWith("'")) {
+        console.log("value if utf8", value);
+        return value;
       } else {
         console.log("value if not utf8", escapedValue);
         return `'${escapedValue}'`;
