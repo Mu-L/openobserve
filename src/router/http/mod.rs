@@ -163,21 +163,25 @@ async fn dispatch(
 
     // send query
     let mut headers = req.head().clone();
-    if path.contains("/segment/_json") {
+    let o2_request_id = if path.contains("/segment/_json") {
         let request_id = uuid();
         headers.headers_mut().insert(
             header::HeaderName::from_static("o2-request-id"),
             header::HeaderValue::from_str(&request_id).unwrap(),
         );
         log::info!("o2-request-id: {}, dispatch: {}", request_id, path);
-    }
+        request_id.to_string()
+    } else {
+        "".to_string()
+    };
     let resp = client
         .request_from(new_url.value.clone(), &headers)
         .send_stream(payload)
         .await;
     if let Err(e) = resp {
         log::error!(
-            "dispatch: {}, error: {}, took: {} ms",
+            "o2-request-id: {}, dispatch: {}, error: {}, took: {} ms",
+            o2_request_id,
             new_url.value,
             e,
             start.elapsed().as_millis()
