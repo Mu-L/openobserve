@@ -15,10 +15,14 @@
 
 use ::config::{
     get_config,
+    ider::uuid,
     meta::cluster::{Role, RoleGroup},
     utils::rand::get_rand_element,
 };
-use actix_web::{http::Error, route, web, HttpRequest, HttpResponse};
+use actix_web::{
+    http::{header, Error},
+    route, web, HttpRequest, HttpResponse,
+};
 
 use crate::common::infra::cluster;
 
@@ -158,8 +162,17 @@ async fn dispatch(
     }
 
     // send query
+    let mut headers = req.head().clone();
+    if path.contains("/segment/_json") {
+        let request_id = uuid();
+        headers.headers_mut().insert(
+            header::HeaderName::from_static("o2-request-id"),
+            header::HeaderValue::from_str(&request_id).unwrap(),
+        );
+        log::info!("o2-request-id: {}, dispatch: {}", request_id, path);
+    }
     let resp = client
-        .request_from(new_url.value.clone(), req.head())
+        .request_from(new_url.value.clone(), &headers)
         .send_stream(payload)
         .await;
     if let Err(e) = resp {

@@ -101,6 +101,7 @@ pub async fn multi(
             IngestionRequest::Multi(&body),
             user_email,
             None,
+            None,
         )
         .await
         {
@@ -145,6 +146,20 @@ pub async fn json(
 ) -> Result<HttpResponse, Error> {
     let (org_id, stream_name) = path.into_inner();
     let user_email = in_req.headers().get("user_id").unwrap().to_str().unwrap();
+    let o2_request_id = in_req
+        .headers()
+        .get("o2-request-id")
+        .map(|header| header.to_str().unwrap());
+
+    if o2_request_id.is_some() {
+        log::info!(
+            "o2-request-id: {}, org_id: {}, stream_name: {}, in http handler",
+            o2_request_id.unwrap(),
+            org_id,
+            stream_name
+        );
+    }
+
     Ok(
         match logs::ingest::ingest(
             &org_id,
@@ -152,6 +167,7 @@ pub async fn json(
             IngestionRequest::JSON(&body),
             user_email,
             None,
+            o2_request_id,
         )
         .await
         {
@@ -207,6 +223,7 @@ pub async fn handle_kinesis_request(
             IngestionRequest::KinesisFH(&post_data.into_inner()),
             user_email,
             None,
+            None,
         )
         .await
         {
@@ -241,6 +258,7 @@ pub async fn handle_gcp_request(
             &stream_name,
             IngestionRequest::GCP(&post_data.into_inner()),
             user_email,
+            None,
             None,
         )
         .await

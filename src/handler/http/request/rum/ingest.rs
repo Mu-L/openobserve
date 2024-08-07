@@ -120,6 +120,7 @@ pub async fn data(
             IngestionRequest::RUM(&body),
             "",
             Some(extend_json),
+            None,
         )
         .await
         {
@@ -161,6 +162,7 @@ pub async fn log(
             IngestionRequest::RUM(&body),
             "",
             Some(extend_json),
+            None,
         )
         .await
         {
@@ -219,6 +221,7 @@ pub async fn sessionreplay(
             IngestionRequest::RUM(&body.into()),
             "",
             Some(extend_json),
+            None,
         )
         .await
         {

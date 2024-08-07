@@ -54,6 +54,7 @@ pub async fn ingest(
     in_req: IngestionRequest<'_>,
     user_email: &str,
     extend_json: Option<&HashMap<String, serde_json::Value>>,
+    o2_request_id: Option<&str>,
 ) -> Result<IngestionResponse> {
     let start = std::time::Instant::now();
     let started_at: i64 = Utc::now().timestamp_micros();
@@ -66,6 +67,10 @@ pub async fn ingest(
     let cfg = get_config();
     let min_ts = (Utc::now() - Duration::try_hours(cfg.limit.ingest_allowed_upto).unwrap())
         .timestamp_micros();
+
+    if let Some(o2_request_id) = o2_request_id {
+        log::info!("o2-request-id: {}, register transform", o2_request_id);
+    }
 
     // Start Register Transforms for stream
     let mut runtime = crate::service::ingestion::init_functions_runtime();
@@ -154,6 +159,10 @@ pub async fn ingest(
             )
         }
     };
+
+    if let Some(o2_request_id) = o2_request_id {
+        log::info!("o2-request-id: {}, start processing", o2_request_id);
+    }
 
     let mut stream_status = StreamStatus::new(&stream_name);
     let mut json_data_by_stream = HashMap::new();
@@ -247,6 +256,10 @@ pub async fn ingest(
         ));
     }
 
+    if let Some(o2_request_id) = o2_request_id {
+        log::info!("o2-request-id: {}, start writing", o2_request_id);
+    }
+
     let (metric_rpt_status_code, response_body) = {
         let mut status = IngestionStatus::Record(stream_status.status);
         let write_result = super::write_logs_by_stream(
@@ -270,6 +283,10 @@ pub async fn ingest(
             }
         }
     };
+
+    if let Some(o2_request_id) = o2_request_id {
+        log::info!("o2-request-id: {}, update metrics", o2_request_id);
+    }
 
     // update ingestion metrics
     let took_time = start.elapsed().as_secs_f64();

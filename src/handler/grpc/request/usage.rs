@@ -39,6 +39,7 @@ impl Usage for UsageServerImpl {
             IngestionRequest::Usage(&in_data.data.into()),
             "",
             None,
+            None,
         )
         .await;
 
