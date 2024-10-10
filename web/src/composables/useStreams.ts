@@ -198,8 +198,8 @@ const useStreams = () => {
                 store.state.selectedOrganization.identifier,
                 streamName,
                 streamType,
-              );
-              streams[streamType].list[streamIndex] = _stream.data;
+              ); 
+              streams[streamType].list[streamIndex] = removeSchemaFields(_stream.data);
             } catch (err) {
               return reject("Error while fetching schema");
             }
@@ -260,7 +260,7 @@ const useStreams = () => {
                 streamType,
               );
 
-              streams[streamType].list[streamIndex] = fetchedStream.data;
+              streams[streamType].list[streamIndex] = removeSchemaFields(fetchedStream.data);
             }
           }
 
@@ -275,6 +275,15 @@ const useStreams = () => {
       }),
     );
   };
+
+  function removeSchemaFields (streamData: any) {
+    if(streamData.schema){
+      streamData.schema = streamData.schema.filter((field: any) => {
+        return field.name != '_original' && field.name != '_o2_id';
+      });
+    }
+    return streamData
+  }
 
   const isStreamFetched = (streamType: string) => {
     let isStreamFetched = false;
@@ -453,8 +462,8 @@ const useStreams = () => {
       return objA === objB;
     }
 
-    const keysA = Object.keys(objA).filter((key: string) => key !== "disabled");
-    const keysB = Object.keys(objB).filter((key: string) => key !== "disabled");
+    const keysA = Object.keys(objA)
+    const keysB = Object.keys(objB)
 
     if (keysA.length !== keysB.length) return false;
 
@@ -517,8 +526,13 @@ const useStreams = () => {
         const result: any = compareArrays(previousArray, currentArray);
         add = result.add;
         remove = result.remove;
-
-        remove = remove.filter((item: any) => item.disabled !== true);
+        remove = remove.filter((item: any) => {
+          const isInAdd = add.some((addItem: any) => addItem.field === item.field);
+        
+          // Only keep in `remove` if not in `add` and `disabled` is false
+          return !isInAdd && item.disabled === false;
+        });
+        
       } else {
         // For other attributes, do a simple array comparison
         add = currentArray.filter((item: any) => !previousArray.includes(item));

@@ -5,7 +5,7 @@
         class="logs-json-preview-tabs q-mr-sm"
         style="border: 1px solid #8a8a8a; border-radius: 4px; overflow: hidden"
         data-test="logs-json-preview-tabs"
-        :tabs="tabs"
+        :tabs="filteredTabs"
         v-model:active-tab="activeTab"
         @update:active-tab="handleTabChange"
       />
@@ -21,7 +21,7 @@
       />
 
       <div
-        v-if="showViewTraceBtn"
+        v-if="showViewTraceBtn && filteredTracesStreamOptions.length"
         class="o2-input flex items-center logs-trace-selector"
       >
         <q-select
@@ -98,9 +98,11 @@
         />
       </div>
     </div>
-    <div v-show="activeTab === 'unflattened'" class="q-pl-md">
+    <div v-show="activeTab === 'unflattened' " class="q-pl-md">
+      <q-spinner v-if="loading" size="lg" color="primary" />
+
       <query-editor
-        v-model:query="nestedJson"
+        v-model:query="unflattendData"
         ref="queryEditorRef"
         :editor-id="`logs-json-preview-unflattened-json-editor-${previewId}`"
         class="monaco-editor"
@@ -223,16 +225,7 @@
 </template>
 
 <script lang="ts">
-import {
-  defineComponent,
-  ref,
-  onBeforeMount,
-  computed,
-  onMounted,
-  watch,
-  nextTick,
-  defineAsyncComponent,
-} from "vue";
+import { ref, onBeforeMount, computed, nextTick, onMounted,watch } from "vue";
 import { getImageURL, getUUID } from "@/utils/zincutils";
 import { useStore } from "vuex";
 import EqualIcon from "@/components/icons/EqualIcon.vue";
@@ -243,6 +236,11 @@ import { outlinedAccountTree } from "@quasar/extras/material-icons-outlined";
 import { useRouter } from "vue-router";
 import useStreams from "@/composables/useStreams";
 import AppTabs from "@/components/common/AppTabs.vue";
+import searchService from "@/services/search";
+import { generateTraceContext } from "@/utils/zincutils";
+import { defineAsyncComponent } from "vue";
+import { useQuasar } from "quasar";
+
 
 export default {
   name: "JsonPreview",
@@ -273,6 +271,7 @@ export default {
   setup(props: any, { emit }: any) {
     const { t } = useI18n();
     const store = useStore();
+    const activeTab = ref("flattened");
 
     const streamSearchValue = ref<string>("");
 
@@ -282,13 +281,14 @@ export default {
 
     const tracesStreams = ref([]);
 
-    const activeTab = ref("flattened");
-
     const queryEditorRef = ref<any>();
 
     const previewId = ref("");
+    const schemaToBeSearch = ref({});
 
-    const nestedJson = ref("");
+    const $q = useQuasar();
+    const unflattendData : any = ref("");
+    const loading = ref(false);
 
     const tabs = [
       {
@@ -305,17 +305,16 @@ export default {
       emit(
         "copy",
         activeTab.value === "unflattened"
-          ? JSON.parse(nestedJson.value)
+          ? JSON.parse(unflattendData.value)
           : props.value,
-      );
-    };
+      );    };
     const addSearchTerm = (value: string) => {
       emit("addSearchTerm", value);
     };
     const addFieldToTable = (value: string) => {
       emit("addFieldToTable", value);
     };
-    const { searchObj } = useLogs();
+    const { searchObj,searchAggData } = useLogs();
     let multiStreamFields: any = ref([]);
 
     onBeforeMount(() => {
@@ -326,30 +325,71 @@ export default {
           multiStreamFields.value.push(item.name);
         }
       });
-      getTracesStreams();
+      if (showViewTraceBtn.value) getTracesStreams();
       previewId.value = getUUID();
     });
 
-    onMounted(() => {
-      nestedJson.value = getNestedJson();
+    onMounted(async () => {
     });
 
-    watch(
+    watch (
       () => props.value,
-      () => {
-        nestedJson.value = getNestedJson();
+      async () =>  {
+        if (!props.value._o2_id || searchAggData.hasAggregation || searchObj.data.stream.selectedStream.length > 1  ) {
+          return; 
+        }
+
+        loading.value = true;
+
+        try {
+          const { traceparent, traceId } = generateTraceContext();
+
+          const res = await searchService.search(
+            {
+              org_identifier: searchObj.organizationIdentifier,
+              query: {
+                "query": {
+                  "start_time": props.value._timestamp - 10 * 60 * 1000,
+                  "sql": `SELECT _original FROM "${searchObj.data.stream.selectedStream}" where _o2_id = ${props.value._o2_id} and _timestamp = ${props.value._timestamp}`,
+                  "end_time": props.value._timestamp + 10 * 60 * 1000,
+                  "sql_mode": "full",
+                  "size": 1,
+                  "from": 0,
+                  "quick_mode": false,
+                }
+              },
+              page_type: searchObj.data.stream.streamType,
+              traceparent,
+            },
+            "UI"
+          );
+          unflattendData.value = res.data.hits[0]._original
+        } catch (err : any) {
+          loading.value = false
+          $q.notify({
+          message:
+            err.response?.data?.message || "Failed to get the Original data",
+          color: "negative",
+          position: "bottom",
+          timeout: 1500,
+        });
+        } finally {
+          loading.value = false; 
+        }
       },
+      { immediate: true, deep: true }
     );
+
+  
 
     const getTracesStreams = async () => {
       await getStreams("traces", false)
         .then((res: any) => {
+
           tracesStreams.value = res.list.map((option: any) => option.name);
           filteredTracesStreamOptions.value = JSON.parse(
             JSON.stringify(tracesStreams.value),
           );
-
-          console.log("tracesStreams", tracesStreams.value);
 
           if (!searchObj.meta.selectedTraceStream.length)
             searchObj.meta.selectedTraceStream = tracesStreams.value[0];
@@ -357,6 +397,8 @@ export default {
         .catch(() => Promise.reject())
         .finally(() => {});
     };
+
+
 
     const filterStreamFn = (val: any = "") => {
       filteredTracesStreamOptions.value = tracesStreams.value.filter(
@@ -373,7 +415,6 @@ export default {
     const showViewTraceBtn = computed(() => {
       return (
         !store.state.hiddenMenus.has("traces") && // Check if traces menu is hidden
-        filteredTracesStreamOptions.value.length && // Check if traces streams are available
         props.value[
           store.state.organizationData?.organizationSettings
             ?.trace_id_field_name
@@ -381,51 +422,7 @@ export default {
       );
     });
 
-    const getNestedJson = () => {
-      const result = {};
 
-      try {
-        Object.keys(props.value).forEach((key) => {
-          let keys = key.split("_");
-
-          // If any field starts with _
-          let keyWithPrefix = "";
-          for (let i = 0; i < keys.length; i++) {
-            if (keys[i] === "") {
-              keyWithPrefix += "_";
-            } else {
-              if (keyWithPrefix.length) {
-                keyWithPrefix += keys[i];
-                keys[i] = keyWithPrefix;
-                keyWithPrefix = "";
-              }
-            }
-          }
-
-          keys = keys.filter((k) => k !== "");
-
-          type NestedObject = {
-            [key: string]: NestedObject | any;
-          };
-
-          // { [key: string]: string }
-          keys.reduce((acc: NestedObject, k: string, index: number) => {
-            if (index === keys.length - 1) {
-              acc[k] = props.value[key];
-            } else {
-              if (!(k in acc)) {
-                acc[k] = {};
-              }
-            }
-            return acc[k];
-          }, result);
-        });
-      } catch (e) {
-        console.log("Error in getNestedJson", e);
-      }
-
-      return JSON.stringify(result);
-    };
 
     const handleTabChange = async () => {
       if (activeTab.value === "unflattened") {
@@ -433,6 +430,17 @@ export default {
         queryEditorRef.value.formatDocument();
       }
     };
+
+  const filteredTabs = computed(() => {
+        return tabs.filter(tab => {
+          if (props.value._o2_id == undefined || searchAggData.hasAggregation || searchObj.data.stream.selectedStream.length > 1) {
+          return false;
+        }
+          return true;
+        });
+      });
+
+
 
     return {
       t,
@@ -448,27 +456,35 @@ export default {
       filteredTracesStreamOptions,
       filterStreamFn,
       streamSearchValue,
-      showViewTraceBtn,
-      tabs,
       activeTab,
-      nestedJson,
-      handleTabChange,
+      showViewTraceBtn,
       queryEditorRef,
       previewId,
+      loading,
+      unflattendData,
+      schemaToBeSearch,
+      filteredTabs,
+      handleTabChange,
     };
   },
 };
 </script>
 
+
 <style lang="scss" scoped>
+.monaco-editor{
+  --vscode-focusBorder: #515151 !important;
+}
 .log_json_content {
   white-space: pre-wrap;
   font-family: monospace;
   font-size: 12px;
 }
-.monaco-editor {
+.monaco-editor  {
+
   width: calc(100% - 16px) !important;
   height: calc(100vh - 250px) !important;
+
 
   &.expanded {
     height: 300px !important;
